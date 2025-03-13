@@ -4,6 +4,14 @@ import cartago.Artifact;
 import cartago.OPERATION;
 import cartago.OpFeedbackParam;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.URL;
+import java.util.Scanner;
+
 /**
  * A CArtAgO artifact that agent can use to interact with LDP containers in a Solid pod.
  */
@@ -29,7 +37,25 @@ public class Pod extends Artifact {
    */
     @OPERATION
     public void createContainer(String containerName) {
-        log("1. Implement the method createContainer()");
+        try {
+            URL url = new URL(podURL + "/" + containerName + "/");
+            log(url.toString());
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("PUT");
+            connection.setRequestProperty("Content-Type", "text/turtle");
+            connection.setDoOutput(true);
+            connection.connect();
+
+            int responseCode = connection.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_CREATED || responseCode == HttpURLConnection.HTTP_NO_CONTENT) {
+                log("Container created successfully: " + containerName);
+            } else {
+                log("Failed to create container: " + containerName + ". Response code: " + responseCode);
+            }
+            connection.disconnect();
+        } catch (IOException e) {
+            log("Error creating container: " + e.getMessage());
+        }
     }
 
   /**
@@ -41,7 +67,29 @@ public class Pod extends Artifact {
    */
     @OPERATION
     public void publishData(String containerName, String fileName, Object[] data) {
-        log("2. Implement the method publishData()");
+        try {
+            URL url = new URL(podURL + "/" + containerName + "/" + fileName);
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("PUT");
+            connection.setRequestProperty("Content-Type", "text/plain; charset=UTF-8");
+            connection.setDoOutput(true);
+
+            String dataString = createStringFromArray(data);
+            try (OutputStream os = connection.getOutputStream()) {
+                os.write(dataString.getBytes());
+                os.flush();
+            }
+
+            int responseCode = connection.getResponseCode();
+            if (responseCode >= 200 && responseCode < 300) {
+                log("Data published successfully to: " + fileName);
+            } else {
+                log("Failed to publish data to: " + fileName + ". Response code: " + responseCode);
+            }
+            connection.disconnect();
+        } catch (IOException e) {
+            log("Error publishing data: " + e.getMessage());
+        }
     }
 
   /**
@@ -64,23 +112,29 @@ public class Pod extends Artifact {
    * @return An array whose elements are the data read from the .txt file
    */
     public Object[] readData(String containerName, String fileName) {
-        log("3. Implement the method readData(). Currently, the method returns mock data");
+        try {
+            URL url = new URL(podURL + "/" + containerName + "/" + fileName);
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("GET");
+            connection.setRequestProperty("Accept", "text/plain");
+            connection.connect();
 
-        // Remove the following mock responses once you have implemented the method
-        switch(fileName) {
-            case "watchlist.txt":
-                Object[] mockWatchlist = new Object[]{"The Matrix", "Inception", "Avengers: Endgame"};
-                return mockWatchlist;
-            case "sleep.txt":
-                Object[] mockSleepData = new Object[]{"6", "7", "5"};
-                return mockSleepData;
-            case "trail.txt":
-                Object[] mockTrailData = new Object[]{"3", "5.5", "5.5"};
-                return mockTrailData; 
-            default:
-                return new Object[0];
+            int responseCode = connection.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                try (InputStream is = connection.getInputStream();
+                     Scanner scanner = new Scanner(is)) {
+                    scanner.useDelimiter("\\A");
+                    String dataString = scanner.hasNext() ? scanner.next() : "";
+                    return createArrayFromString(dataString);
+                }
+            } else {
+                log("Failed to read data from: " + fileName + ". Response code: " + responseCode);
+            }
+            connection.disconnect();
+        } catch (IOException e) {
+            log("Error reading data: " + e.getMessage());
         }
-
+        return new Object[0];
     }
 
   /**
